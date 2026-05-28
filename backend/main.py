@@ -41,20 +41,18 @@ async def get_arrests(month: int = Query(...), year: int = Query(...)):
             *[_fetch_page(client, month, year, offset) for offset in offsets]
         )
 
+    CAT = {"F": 1, "M": 2}
     results = []
     for page in pages:
         for record in page:
             lat = record.get("latitude")
             lon = record.get("longitude")
             if lat and lon:
-                results.append(
-                    {
-                        "arrest_date": record.get("arrest_date"),
-                        "latitude": float(lat),
-                        "longitude": float(lon),
-                        "law_cat_cd": record.get("law_cat_cd"),
-                    }
-                )
+                results.append([
+                    round(float(lat), 4),
+                    round(float(lon), 4),
+                    CAT.get(record.get("law_cat_cd"), 3),
+                ])
 
     return results
 
