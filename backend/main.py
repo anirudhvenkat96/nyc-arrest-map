@@ -1,4 +1,5 @@
 import asyncio
+import os
 import httpx
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 NYC_ARRESTS_URL = "https://data.cityofnewyork.us/resource/8h9b-rp9u.json"
+SOCRATA_APP_TOKEN = os.getenv("SOCRATA_APP_TOKEN", "")
 PAGE_SIZE = 5000
 MAX_PAGES = 6          # 30,000 records max per month
 PAGE_TIMEOUT = httpx.Timeout(timeout=45.0, connect=10.0, read=45.0, write=10.0, pool=10.0)
@@ -27,6 +29,8 @@ async def _fetch_page(
         "$offset": offset,
         "$where": f"date_extract_m(arrest_date)={month} AND date_extract_y(arrest_date)={year}",
     }
+    if SOCRATA_APP_TOKEN:
+        params["$$app_token"] = SOCRATA_APP_TOKEN
     response = await client.get(NYC_ARRESTS_URL, params=params)
     response.raise_for_status()
     return response.json()
@@ -68,6 +72,8 @@ async def _fetch_month(client: httpx.AsyncClient, year: int, month: int) -> list
                 "$offset": offset,
                 "$where": f"date_extract_m(arrest_date)={month} AND date_extract_y(arrest_date)={year}",
             }
+            if SOCRATA_APP_TOKEN:
+                params["$$app_token"] = SOCRATA_APP_TOKEN
             response = await client.get(NYC_ARRESTS_URL, params=params)
             response.raise_for_status()
             page = response.json()
