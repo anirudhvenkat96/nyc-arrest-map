@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Arrest Map – Year View</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d0d0d;
+      color: #eee;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Title bar ── */
+    #titlebar {
+      flex-shrink: 0;
+      background: #0d0d0d;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      color: #f4c542;
+      text-transform: uppercase;
+    }
+
+    #nav-link {
+      color: #888;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 0.3px;
+      text-transform: none;
+      transition: color 0.12s;
+    }
+    #nav-link:hover { color: #f4c542; }
+
+    /* ── Control bar ── */
+    #controls {
+      flex-shrink: 0;
+      background: #141414;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #controls .group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #controls label {
+      font-size: 12px;
+      color: #888;
+      white-space: nowrap;
+    }
+
+    select {
+      background: #1e1e1e;
+      color: #ddd;
+      border: 1px solid #383838;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: #555; }
+
+    button {
+      background: #1e1e1e;
+      color: #ddd;
+      border: 1px solid #383838;
+      border-radius: 4px;
+      padding: 5px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: #2a2a2a; border-color: #555; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-load  { border-color: #5bc8f5; color: #5bc8f5; }
+    #btn-play  { border-color: #f4c542; color: #f4c542; }
+    #btn-reset { border-color: #e07bb0; color: #e07bb0; }
+
+    input[type="range"] {
+      accent-color: #f4c542;
+      cursor: pointer;
+      width: 80px;
+    }
+
+    #speed-label {
+      font-size: 12px;
+      color: #888;
+      min-width: 24px;
+    }
+
+    .sep {
+      width: 1px;
+      height: 22px;
+      background: #2a2a2a;
+      flex-shrink: 0;
+    }
+
+    #status {
+      font-size: 12px;
+      color: #f4c542;
+      margin-left: auto;
+    }
+
+    /* ── Map area ── */
+    #map-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #map { width: 100%; height: 100%; }
+
+    /* ── HUD ── */
+    #hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 800;
+      background: rgba(10, 10, 10, 0.82);
+      border: 1px solid #2c2c2c;
+      border-radius: 8px;
+      padding: 12px 18px;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      min-width: 200px;
+    }
+
+    #hud-month {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f4c542;
+      letter-spacing: 0.3px;
+    }
+
+    #hud-arrests {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 6px;
+    }
+
+    #hud-arrests span {
+      color: #eee;
+      font-weight: 600;
+    }
+
+    /* ── Progress bar ── */
+    #progress-wrap {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: #111;
+      z-index: 800;
+    }
+
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #5bc8f5 0%, #f4c542 100%);
+      transition: width 0.08s linear;
+    }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 1200;
+      background: rgba(0, 0, 0, 0.78);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      backdrop-filter: blur(4px);
+    }
+
+    #loading-text {
+      font-size: 15px;
+      color: #f4c542;
+      letter-spacing: 0.4px;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #333;
+      border-top-color: #f4c542;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .leaflet-control-attribution {
+      background: rgba(0,0,0,0.5) !important;
+      color: #555 !important;
+      font-size: 10px !important;
+    }
+    .leaflet-control-attribution a { color: #777 !important; }
+  </style>
+</head>
+<body>
+
+<div id="titlebar">
+  <a href="index.html" id="nav-link">&#8592; Month View</a>
+  <span>NYC Arrests Visualizer</span>
+</div>
+
+<div id="controls">
+  <div class="group">
+    <label for="sel-year">Year</label>
+    <select id="sel-year"></select>
+  </div>
+
+  <button id="btn-load">Load Year</button>
+
+  <div class="sep"></div>
+
+  <button id="btn-play" disabled>&#9654; Play</button>
+  <button id="btn-reset" disabled>&#8635; Reset</button>
+
+  <div class="sep"></div>
+
+  <div class="group">
+    <label for="speed-slider">Speed</label>
+    <input type="range" id="speed-slider" min="1" max="10" value="5" />
+    <span id="speed-label">5×</span>
+  </div>
+
+  <span id="status">Select a year and load data.</span>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <div id="hud">
+    <div id="hud-month">—</div>
+    <div id="hud-arrests">Arrests this month: <span id="hud-count">—</span></div>
+  </div>
+
+  <div id="progress-wrap">
+    <div id="progress-bar"></div>
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loading-text">Loading year data...</div>
+  </div>
+</div>
+
+<script>
+  // ── Constants ──────────────────────────────────────────────────────────────
+  const LAT_MIN = 40.48, LAT_MAX = 40.92;
+  const LNG_MIN = -74.26, LNG_MAX = -73.70;
+  const LAT_RANGE = LAT_MAX - LAT_MIN;
+  const LNG_RANGE = LNG_MAX - LNG_MIN;
+  const GRID_SIZE = 300;
+  const FRAMES_PER_TRANS = 6;
+  const FRAME_HOLD = 20;
+  // 20 hold-start + 11 transitions × 6 frames + 20 hold-end = 106
+  const TOTAL_FRAMES = FRAME_HOLD + 11 * FRAMES_PER_TRANS + FRAME_HOLD;
+  const MONTH_NAMES = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December',
+  ];
+
+  // ── Map ────────────────────────────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: false }).setView([40.7128, -74.006], 11);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+
+  let layerA = null, layerB = null;
+  let layerAMonth = -1, layerBMonth = -1;
+  let heatPointsCache = []; // pre-computed [lat, lng, intensity] arrays, one per month
+
+  // ── Year dropdown ──────────────────────────────────────────────────────────
+  const selYear = document.getElementById('sel-year');
+  for (let y = 2023; y >= 2006; y--) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    selYear.appendChild(o);
+  }
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const btnLoad        = document.getElementById('btn-load');
+  const btnPlay        = document.getElementById('btn-play');
+  const btnReset       = document.getElementById('btn-reset');
+  const speedSlider    = document.getElementById('speed-slider');
+  const speedLabel     = document.getElementById('speed-label');
+  const statusEl       = document.getElementById('status');
+  const hudMonth       = document.getElementById('hud-month');
+  const hudCount       = document.getElementById('hud-count');
+  const progressBar    = document.getElementById('progress-bar');
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingText    = document.getElementById('loading-text');
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let grids       = [];  // Float32Array[12], index 0 = January
+  let summary     = {};  // {1: count, ..., 12: count}
+  let maxVal      = 1;   // peak cell value across all 12 grids (for consistent colour scale)
+  let currentYear = null;
+  let frameIdx    = 0;
+  let animTimer   = null;
+  let playing     = false;
+
+  // ── Grid functions ─────────────────────────────────────────────────────────
+
+  function buildGrid(points) {
+    const grid = new Float32Array(GRID_SIZE * GRID_SIZE);
+    for (const { latitude, longitude } of points) {
+      const row = Math.floor((latitude  - LAT_MIN) / LAT_RANGE * GRID_SIZE);
+      const col = Math.floor((longitude - LNG_MIN) / LNG_RANGE * GRID_SIZE);
+      if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
+        grid[row * GRID_SIZE + col]++;
+      }
+    }
+    return grid;
+  }
+
+  function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+  }
+
+  function gridToHeatPoints(grid) {
+    const points = [];
+    const threshold = maxVal * 0.005;
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const val = grid[row * GRID_SIZE + col];
+        if (val > threshold) {
+          const lat = LAT_MIN + (row + 0.5) / GRID_SIZE * LAT_RANGE;
+          const lng = LNG_MIN + (col + 0.5) / GRID_SIZE * LNG_RANGE;
+          points.push([lat, lng, val / maxVal]);
+        }
+      }
+    }
+    return points;
+  }
+
+  // ── Layer opacity helper ───────────────────────────────────────────────────
+
+  function setLayerOpacity(layer, opacity) {
+    if (layer && layer._canvas) layer._canvas.style.opacity = opacity;
+  }
+
+  // ── Frame mapping ──────────────────────────────────────────────────────────
+  // Sequence: [20 hold on Jan] [6 frames Jan→Feb] ... [6 frames Nov→Dec] [20 hold on Dec]
+
+  function getFrameData(idx) {
+    if (idx < FRAME_HOLD) {
+      return { mA: 0, mB: 0, t: 0, monthIdx: 0 };
+    }
+    const i = idx - FRAME_HOLD;
+    const transIdx     = Math.floor(i / FRAMES_PER_TRANS); // 0–10 → transitions; ≥11 → end hold
+    const frameInTrans = i % FRAMES_PER_TRANS;
+
+    if (transIdx >= 11) {
+      return { mA: 11, mB: 11, t: 0, monthIdx: 11 };
+    }
+    const t = (frameInTrans + 1) / FRAMES_PER_TRANS;
+    return { mA: transIdx, mB: transIdx + 1, t, monthIdx: t < 0.5 ? transIdx : transIdx + 1 };
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  function renderFrame(idx) {
+    const { mA, mB, t, monthIdx } = getFrameData(idx);
+    const isHold = mA === mB;
+
+    // Lazy-load heat points into each layer only when the target month changes
+    if (layerAMonth !== mA) {
+      layerA.setLatLngs(heatPointsCache[mA]);
+      layerAMonth = mA;
+    }
+    // During a hold, silently preload the next month into layer B so it's ready
+    const bTarget = isHold ? Math.min(mA + 1, 11) : mB;
+    if (layerBMonth !== bTarget) {
+      layerB.setLatLngs(heatPointsCache[bTarget]);
+      layerBMonth = bTarget;
+    }
+
+    if (isHold) {
+      setLayerOpacity(layerA, 1);
+      setLayerOpacity(layerB, 0);
+    } else {
+      const e = easeInOut(t);
+      setLayerOpacity(layerA, 1 - e);
+      setLayerOpacity(layerB, e);
+    }
+
+    hudMonth.textContent = MONTH_NAMES[monthIdx] + ' ' + currentYear;
+    hudCount.textContent = (summary[monthIdx + 1] || 0).toLocaleString();
+    progressBar.style.width = (idx / (TOTAL_FRAMES - 1) * 100) + '%';
+  }
+
+  // ── Load ───────────────────────────────────────────────────────────────────
+
+  btnLoad.addEventListener('click', async () => {
+    const year = parseInt(selYear.value);
+
+    btnLoad.disabled = true;
+    btnPlay.disabled = true;
+    btnReset.disabled = true;
+    clearAnim();
+    showOverlay('Loading year data...');
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/arrests/year?year=${year}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+
+      summary = data.summary;
+      grids = [];
+
+      for (let m = 1; m <= 12; m++) {
+        showOverlay(`Building grids… ${m} of 12`);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        grids.push(buildGrid(data.by_month[m] ?? []));
+      }
+
+      // 95th-percentile cell value, then compressed by 0.3× to push more cells
+      // into the hot colour range and prevent the scale washing out to cool colours
+      const allVals = [];
+      for (const g of grids) {
+        for (let i = 0; i < g.length; i++) {
+          if (g[i] > 0) allVals.push(g[i]);
+        }
+      }
+      allVals.sort((a, b) => a - b);
+      maxVal = (allVals[Math.floor(allVals.length * 0.95)] ?? 1) * 0.15;
+
+      currentYear = year;
+
+      // Pre-compute heat points for all months (done once, reused every frame)
+      heatPointsCache = grids.map(g => gridToHeatPoints(g));
+
+      if (layerA) map.removeLayer(layerA);
+      if (layerB) map.removeLayer(layerB);
+
+      const heatCfg = {
+        radius: 10,
+        blur: 15,
+        maxZoom: 17,
+        max: 1.0,
+        minOpacity: 0.4,
+        gradient: { 0.2: 'blue', 0.4: 'cyan', 0.55: 'lime', 0.7: 'yellow', 0.85: 'orange', 1.0: 'red' },
+      };
+      // Layer A starts with January; Layer B starts with February (preloaded, hidden)
+      layerA = L.heatLayer(heatPointsCache[0], heatCfg).addTo(map);
+      layerB = L.heatLayer(heatPointsCache[1], heatCfg).addTo(map);
+      layerAMonth = 0;
+      layerBMonth = 1;
+      setLayerOpacity(layerA, 1);
+      setLayerOpacity(layerB, 0);
+
+      renderFrame(0);
+
+      const total = Object.values(summary).reduce((s, v) => s + v, 0);
+      statusEl.textContent = `${total.toLocaleString()} arrests in ${year} — press Play.`;
+      btnPlay.disabled  = false;
+      btnReset.disabled = false;
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + e.message;
+    }
+
+    hideOverlay();
+    btnLoad.disabled = false;
+  });
+
+  // ── Play / Pause / Reset ───────────────────────────────────────────────────
+
+  btnPlay.addEventListener('click', () => {
+    if (playing) {
+      pause();
+    } else {
+      if (frameIdx >= TOTAL_FRAMES) frameIdx = 0;
+      play();
+    }
+  });
+
+  btnReset.addEventListener('click', () => {
+    pause();
+    frameIdx = 0;
+    renderFrame(0);
+    const total = Object.values(summary).reduce((s, v) => s + v, 0);
+    statusEl.textContent = `${total.toLocaleString()} arrests in ${currentYear} — press Play.`;
+  });
+
+  function play() {
+    playing = true;
+    btnPlay.textContent = '⏸ Pause';
+    btnPlay.style.color = '#aaa';
+    btnPlay.style.borderColor = '#555';
+    startTimer();
+  }
+
+  function pause() {
+    playing = false;
+    btnPlay.textContent = '▶ Play';
+    btnPlay.style.color = '#f4c542';
+    btnPlay.style.borderColor = '#f4c542';
+    stopTimer();
+  }
+
+  function startTimer() {
+    const ms = Math.round(800 / (parseInt(speedSlider.value) * 2));
+    animTimer = setInterval(() => {
+      if (frameIdx >= TOTAL_FRAMES) {
+        pause();
+        statusEl.textContent = 'Animation complete.';
+        return;
+      }
+      renderFrame(frameIdx++);
+    }, ms);
+  }
+
+  function stopTimer() {
+    clearInterval(animTimer);
+    animTimer = null;
+  }
+
+  function clearAnim() {
+    pause();
+    frameIdx = 0;
+    grids = [];
+    heatPointsCache = [];
+    summary = {};
+    layerAMonth = -1;
+    layerBMonth = -1;
+    hudMonth.textContent = '—';
+    hudCount.textContent = '—';
+    progressBar.style.width = '0%';
+    if (layerA) { map.removeLayer(layerA); layerA = null; }
+    if (layerB) { map.removeLayer(layerB); layerB = null; }
+  }
+
+  // ── Speed slider ───────────────────────────────────────────────────────────
+
+  speedSlider.addEventListener('input', () => {
+    speedLabel.textContent = speedSlider.value + '×';
+    if (playing) { stopTimer(); startTimer(); }
+  });
+
+  // ── Overlay helpers ────────────────────────────────────────────────────────
+
+  function showOverlay(text) {
+    loadingText.textContent = text;
+    loadingOverlay.style.display = 'flex';
+  }
+
+  function hideOverlay() {
+    loadingOverlay.style.display = 'none';
+  }
+</script>
+</body>
+</html>

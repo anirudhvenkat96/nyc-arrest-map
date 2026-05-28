@@ -26,13 +26,26 @@
       background: #0d0d0d;
       border-bottom: 1px solid #1e1e1e;
       padding: 6px 16px;
-      text-align: left;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       font-size: 13px;
       font-weight: 600;
       letter-spacing: 0.6px;
       color: #f4c542;
       text-transform: uppercase;
     }
+
+    #nav-link {
+      color: #888;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 0.3px;
+      text-transform: none;
+      transition: color 0.12s;
+    }
+    #nav-link:hover { color: #f4c542; }
 
     /* ── Control bar ── */
     #controls {
@@ -234,7 +247,10 @@
 </head>
 <body>
 
-<div id="titlebar">NYC Arrests Visualizer</div>
+<div id="titlebar">
+  NYC Arrests Visualizer
+  <a href="year.html" id="nav-link">Year View &#8594;</a>
+</div>
 
 <div id="controls">
   <div class="group">
