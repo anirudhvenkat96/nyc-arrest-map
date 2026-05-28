@@ -15,7 +15,7 @@ app.add_middleware(
 NYC_ARRESTS_URL = "https://data.cityofnewyork.us/resource/8h9b-rp9u.json"
 PAGE_SIZE = 5000
 MAX_PAGES = 6          # 30,000 records max per month
-PAGE_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0)
+PAGE_TIMEOUT = httpx.Timeout(timeout=45.0, connect=10.0, read=45.0, write=10.0, pool=10.0)
 _YEAR_SEMAPHORE = asyncio.Semaphore(4)  # max concurrent month fetches
 
 
