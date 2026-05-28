@@ -1,0 +1,564 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Arrest Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d0d0d;
+      color: #eee;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Title bar ── */
+    #titlebar {
+      flex-shrink: 0;
+      background: #0d0d0d;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 6px 16px;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      color: #f4c542;
+      text-transform: uppercase;
+    }
+
+    /* ── Control bar ── */
+    #controls {
+      flex-shrink: 0;
+      background: #141414;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #controls .group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #controls label {
+      font-size: 12px;
+      color: #888;
+      white-space: nowrap;
+    }
+
+    select {
+      background: #1e1e1e;
+      color: #ddd;
+      border: 1px solid #383838;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: #555; }
+
+    button {
+      background: #1e1e1e;
+      color: #ddd;
+      border: 1px solid #383838;
+      border-radius: 4px;
+      padding: 5px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: #2a2a2a; border-color: #555; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-load  { border-color: #5bc8f5; color: #5bc8f5; }
+    #btn-play  { border-color: #f4c542; color: #f4c542; }
+    #btn-reset { border-color: #e07bb0; color: #e07bb0; }
+    #btn-heat  { border-color: #ff6b35; color: #ff6b35; }
+    #btn-heat.active { background: #ff6b35; color: #111; border-color: #ff6b35; }
+
+    input[type="range"] {
+      accent-color: #f4c542;
+      cursor: pointer;
+      width: 80px;
+    }
+
+    #speed-label {
+      font-size: 12px;
+      color: #888;
+      min-width: 24px;
+    }
+
+    .sep {
+      width: 1px;
+      height: 22px;
+      background: #2a2a2a;
+      flex-shrink: 0;
+    }
+
+    #status {
+      font-size: 12px;
+      color: #f4c542;
+      margin-left: auto;
+    }
+
+    /* ── Map area ── */
+    #map-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── HUD ── */
+    #hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 800;
+      background: rgba(10, 10, 10, 0.82);
+      border: 1px solid #2c2c2c;
+      border-radius: 8px;
+      padding: 12px 18px;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      min-width: 190px;
+    }
+
+    #hud-date {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f4c542;
+      letter-spacing: 0.3px;
+    }
+
+    #hud-day-count {
+      font-size: 12px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    #hud-total {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 8px;
+    }
+
+    #hud-total span {
+      color: #eee;
+      font-weight: 600;
+    }
+
+    /* ── Legend ── */
+    #legend {
+      position: absolute;
+      bottom: 20px;
+      left: 14px;
+      z-index: 800;
+      background: rgba(10, 10, 10, 0.82);
+      border: 1px solid #2c2c2c;
+      border-radius: 8px;
+      padding: 10px 14px;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+
+    #legend .legend-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 5px 0;
+      font-size: 12px;
+      color: #bbb;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Progress bar ── */
+    #progress-wrap {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: #111;
+      z-index: 800;
+    }
+
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #5bc8f5 0%, #f4c542 100%);
+      transition: width 0.08s linear;
+    }
+
+    /* Override Leaflet attribution style */
+    .leaflet-control-attribution {
+      background: rgba(0,0,0,0.5) !important;
+      color: #555 !important;
+      font-size: 10px !important;
+    }
+    .leaflet-control-attribution a { color: #777 !important; }
+  </style>
+</head>
+<body>
+
+<div id="titlebar">NYC Arrests Visualizer</div>
+
+<div id="controls">
+  <div class="group">
+    <label for="sel-month">Month</label>
+    <select id="sel-month">
+      <option value="1">January</option>
+      <option value="2">February</option>
+      <option value="3">March</option>
+      <option value="4">April</option>
+      <option value="5">May</option>
+      <option value="6">June</option>
+      <option value="7">July</option>
+      <option value="8">August</option>
+      <option value="9">September</option>
+      <option value="10">October</option>
+      <option value="11">November</option>
+      <option value="12">December</option>
+    </select>
+  </div>
+
+  <div class="group">
+    <label for="sel-year">Year</label>
+    <select id="sel-year"></select>
+  </div>
+
+  <button id="btn-load">Load Data</button>
+
+  <div class="sep"></div>
+
+  <button id="btn-play" disabled>&#9654; Play</button>
+  <button id="btn-reset" disabled>&#8635; Reset</button>
+
+  <div class="sep"></div>
+
+  <div class="group">
+    <label for="speed-slider">Speed</label>
+    <input type="range" id="speed-slider" min="1" max="10" value="5" />
+    <span id="speed-label">5×</span>
+  </div>
+
+  <div class="sep"></div>
+
+  <button id="btn-heat" disabled>&#9618; Heatmap</button>
+
+  <span id="status">Select a month and year, then load data.</span>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <div id="hud">
+    <div id="hud-date">—</div>
+    <div id="hud-day-count">&nbsp;</div>
+    <div id="hud-total">Total arrests: <span id="hud-count">0</span></div>
+  </div>
+
+  <div id="legend">
+    <div class="legend-title">Charge Category</div>
+    <div class="legend-row">
+      <div class="legend-dot" style="background:#f4c542"></div>
+      Felony (F)
+    </div>
+    <div class="legend-row">
+      <div class="legend-dot" style="background:#5bc8f5"></div>
+      Misdemeanor (M)
+    </div>
+    <div class="legend-row">
+      <div class="legend-dot" style="background:#e07bb0"></div>
+      Other / Violation
+    </div>
+  </div>
+
+  <div id="progress-wrap">
+    <div id="progress-bar"></div>
+  </div>
+</div>
+
+<script>
+  // ── Map setup ──────────────────────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: false }).setView([40.7128, -74.006], 11);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const markerLayer = L.layerGroup().addTo(map);
+
+  // ── Year dropdown ──────────────────────────────────────────────────────────
+  const selYear = document.getElementById('sel-year');
+  for (let y = 2023; y >= 2006; y--) {
+    const o = document.createElement('option');
+    o.value = y;
+    o.textContent = y;
+    selYear.appendChild(o);
+  }
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const btnLoad     = document.getElementById('btn-load');
+  const btnPlay     = document.getElementById('btn-play');
+  const btnReset    = document.getElementById('btn-reset');
+  const btnHeat     = document.getElementById('btn-heat');
+  const speedSlider = document.getElementById('speed-slider');
+  const speedLabel  = document.getElementById('speed-label');
+  const statusEl    = document.getElementById('status');
+  const hudDate     = document.getElementById('hud-date');
+  const hudDayCt    = document.getElementById('hud-day-count');
+  const hudCount    = document.getElementById('hud-count');
+  const progressBar = document.getElementById('progress-bar');
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let dayGroups  = [];   // [{date, arrests[]}] sorted ascending
+  let allArrests = [];   // flat list of all loaded arrests (for heatmap)
+  let dayIdx     = 0;
+  let totalPlotted = 0;
+  let animTimer  = null;
+  let playing    = false;
+  let heatLayer  = null;
+  let heatActive = false;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function colorFor(code) {
+    if (code === 'F') return '#f4c542';
+    if (code === 'M') return '#5bc8f5';
+    return '#e07bb0';
+  }
+
+  function fmtDate(iso) {
+    const [y, m, d] = iso.split('-');
+    return `${MONTH_NAMES[+m - 1]} ${+d}, ${y}`;
+  }
+
+  function intervalMs() {
+    // speed 1 → 1500 ms/day, speed 10 → 60 ms/day (logarithmic feel)
+    return Math.round(1500 / Math.pow(parseInt(speedSlider.value), 0.9));
+  }
+
+  // ── Speed slider ───────────────────────────────────────────────────────────
+  speedSlider.addEventListener('input', () => {
+    speedLabel.textContent = speedSlider.value + '×';
+    if (playing) { stopTimer(); startTimer(); }
+  });
+
+  // ── Load data ──────────────────────────────────────────────────────────────
+  btnLoad.addEventListener('click', async () => {
+    const month = document.getElementById('sel-month').value;
+    const year  = selYear.value;
+
+    setLoading(true);
+    clearViz();
+    dayGroups = [];
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/arrests?month=${month}&year=${year}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const arrests = await res.json();
+
+      if (!arrests.length) {
+        statusEl.textContent = 'No records found for that period.';
+        setLoading(false);
+        return;
+      }
+
+      // Group by day (arrest_date is ISO string, slice to YYYY-MM-DD)
+      const byDay = Object.create(null);
+      for (const a of arrests) {
+        const day = a.arrest_date.slice(0, 10);
+        (byDay[day] ??= []).push(a);
+      }
+      dayGroups  = Object.keys(byDay).sort().map(d => ({ date: d, arrests: byDay[d] }));
+      allArrests = arrests;
+
+      const total = arrests.length;
+      statusEl.textContent =
+        `${total.toLocaleString()} arrests across ${dayGroups.length} days — press Play.`;
+      btnPlay.disabled  = false;
+      btnReset.disabled = false;
+      btnHeat.disabled  = false;
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + e.message;
+    }
+
+    setLoading(false);
+  });
+
+  // ── Play / Pause ───────────────────────────────────────────────────────────
+  btnPlay.addEventListener('click', () => {
+    if (playing) {
+      pause();
+    } else {
+      if (dayIdx >= dayGroups.length) rewindViz();
+      play();
+    }
+  });
+
+  btnReset.addEventListener('click', () => {
+    pause();
+    rewindViz();
+    const total = dayGroups.reduce((s, d) => s + d.arrests.length, 0);
+    statusEl.textContent =
+      `${total.toLocaleString()} arrests across ${dayGroups.length} days — press Play.`;
+  });
+
+  function play() {
+    playing = true;
+    btnPlay.textContent = '⏸ Pause';
+    btnPlay.style.color = '#aaa';
+    btnPlay.style.borderColor = '#555';
+    startTimer();
+  }
+
+  function pause() {
+    playing = false;
+    btnPlay.textContent = '▶ Play';
+    btnPlay.style.color = '#f4c542';
+    btnPlay.style.borderColor = '#f4c542';
+    stopTimer();
+  }
+
+  function startTimer() {
+    animTimer = setInterval(step, intervalMs());
+  }
+
+  function stopTimer() {
+    clearInterval(animTimer);
+    animTimer = null;
+  }
+
+  function step() {
+    if (dayIdx >= dayGroups.length) {
+      pause();
+      statusEl.textContent = 'Animation complete.';
+      return;
+    }
+
+    const { date, arrests } = dayGroups[dayIdx];
+
+    for (const a of arrests) {
+      const c = colorFor(a.law_cat_cd);
+      L.circleMarker([a.latitude, a.longitude], {
+        radius: 4 / 3,
+        color: 'transparent',
+        fillColor: c,
+        fillOpacity: 0.72,
+        weight: 0,
+      }).addTo(markerLayer);
+      totalPlotted++;
+    }
+
+    hudDate.textContent    = fmtDate(date);
+    hudDayCt.textContent   = `${arrests.length} arrest${arrests.length !== 1 ? 's' : ''} today`;
+    hudCount.textContent   = totalPlotted.toLocaleString();
+    progressBar.style.width = ((dayIdx + 1) / dayGroups.length * 100) + '%';
+
+    dayIdx++;
+  }
+
+  // ── Heatmap toggle ─────────────────────────────────────────────────────────
+  btnHeat.addEventListener('click', () => {
+    heatActive ? disableHeat() : enableHeat();
+  });
+
+  function enableHeat() {
+    heatActive = true;
+    btnHeat.classList.add('active');
+    btnHeat.textContent = '✕ Heatmap';
+
+    // Pause animation while heatmap is shown
+    if (playing) pause();
+    map.removeLayer(markerLayer);
+
+    const points = allArrests.map(a => [a.latitude, a.longitude, 1]);
+    heatLayer = L.heatLayer(points, {
+      radius: 11,
+      blur: 15,
+      maxZoom: 17,
+      gradient: { 0.0: '#0000ff', 0.4: '#00bfff', 0.65: '#00ff00', 0.85: '#ffff00', 1.0: '#ff0000' },
+    }).addTo(map);
+  }
+
+  function disableHeat() {
+    heatActive = false;
+    btnHeat.classList.remove('active');
+    btnHeat.textContent = '░ Heatmap';
+
+    if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+    map.addLayer(markerLayer);
+  }
+
+  // ── Viz state helpers ──────────────────────────────────────────────────────
+  function clearViz() {
+    pause();
+    if (heatActive) disableHeat();
+    markerLayer.clearLayers();
+    allArrests   = [];
+    dayIdx       = 0;
+    totalPlotted = 0;
+    hudDate.textContent  = '—';
+    hudDayCt.textContent = ' ';
+    hudCount.textContent = '0';
+    progressBar.style.width = '0%';
+    btnPlay.disabled  = true;
+    btnReset.disabled = true;
+    btnHeat.disabled  = true;
+  }
+
+  function rewindViz() {
+    markerLayer.clearLayers();
+    dayIdx       = 0;
+    totalPlotted = 0;
+    hudDate.textContent  = '—';
+    hudDayCt.textContent = ' ';
+    hudCount.textContent = '0';
+    progressBar.style.width = '0%';
+  }
+
+  function setLoading(on) {
+    btnLoad.disabled = on;
+    statusEl.textContent = on ? 'Fetching data…' : statusEl.textContent;
+  }
+</script>
+</body>
+</html>
