@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import httpx
 from fastapi import FastAPI, Query
@@ -15,9 +16,9 @@ app.add_middleware(
 
 NYC_ARRESTS_URL = "https://data.cityofnewyork.us/resource/8h9b-rp9u.json"
 SOCRATA_APP_TOKEN = os.getenv("SOCRATA_APP_TOKEN", "")
-PAGE_SIZE = 5000
-MAX_PAGES = 6          # 30,000 records max per month
-PAGE_TIMEOUT = httpx.Timeout(timeout=45.0, connect=10.0, read=45.0, write=10.0, pool=10.0)
+PAGE_SIZE = 8000
+MAX_PAGES = 8          # 64,000 records max per month
+PAGE_TIMEOUT = httpx.Timeout(timeout=60.0, connect=10.0, read=60.0, write=10.0, pool=10.0)
 _YEAR_SEMAPHORE = asyncio.Semaphore(4)  # max concurrent month fetches
 
 
@@ -38,9 +39,19 @@ async def _fetch_page(
 
 @app.get("/api/arrests")
 async def get_arrests(month: int = Query(...), year: int = Query(...)):
-    offsets = [i * PAGE_SIZE for i in range(MAX_PAGES)]
+    where = f"date_extract_m(arrest_date)={month} AND date_extract_y(arrest_date)={year}"
 
     async with httpx.AsyncClient(timeout=PAGE_TIMEOUT) as client:
+        # Count query to determine exact number of pages needed
+        count_params = {"$select": "count(*) as cnt", "$where": where}
+        if SOCRATA_APP_TOKEN:
+            count_params["$$app_token"] = SOCRATA_APP_TOKEN
+        count_resp = await client.get(NYC_ARRESTS_URL, params=count_params)
+        count_resp.raise_for_status()
+        total = int(count_resp.json()[0]["cnt"])
+        num_pages = min(math.ceil(total / PAGE_SIZE), MAX_PAGES)
+
+        offsets = [i * PAGE_SIZE for i in range(num_pages)]
         pages = await asyncio.gather(
             *[_fetch_page(client, month, year, offset) for offset in offsets]
         )
