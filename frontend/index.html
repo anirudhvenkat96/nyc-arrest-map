@@ -408,7 +408,7 @@
     dayGroups = [];
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/arrests?month=${month}&year=${year}`);
+      const res = await fetch(`https://nyc-arrest-map-production.up.railway.app/api/arrests?month=${month}&year=${year}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const arrests = await res.json();
 
