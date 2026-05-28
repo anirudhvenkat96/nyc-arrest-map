@@ -405,6 +405,43 @@
     if (playing) { stopTimer(); startTimer(); }
   });
 
+  // ── Socrata fetch helpers ──────────────────────────────────────────────────
+  const SOCRATA_URL = 'https://data.cityofnewyork.us/resource/8h9b-rp9u.json';
+  const PAGE_LIMIT  = 8000;
+  const CAT = { F: 1, M: 2 };
+
+  function socrataWhere(month, year) {
+    return `date_extract_m(arrest_date)=${month} AND date_extract_y(arrest_date)=${year}`;
+  }
+
+  async function socrataFetchPage(where, offset) {
+    const params = new URLSearchParams({
+      '$select': 'arrest_date,latitude,longitude,law_cat_cd',
+      '$where':  where,
+      '$limit':  PAGE_LIMIT,
+      '$offset': offset,
+    });
+    const res = await fetch(`${SOCRATA_URL}?${params}`);
+    if (!res.ok) throw new Error(`Socrata error ${res.status}`);
+    return res.json();
+  }
+
+  function processPages(pages) {
+    const arrests = [];
+    for (const page of pages) {
+      for (const r of page) {
+        if (!r.latitude || !r.longitude) continue;
+        arrests.push([
+          Math.round(parseFloat(r.latitude)  * 1e4) / 1e4,
+          Math.round(parseFloat(r.longitude) * 1e4) / 1e4,
+          CAT[r.law_cat_cd] ?? 3,
+          (r.arrest_date || '').slice(0, 10),
+        ]);
+      }
+    }
+    return arrests;
+  }
+
   // ── Load data ──────────────────────────────────────────────────────────────
   btnLoad.addEventListener('click', async () => {
     const month = document.getElementById('sel-month').value;
@@ -415,12 +452,27 @@
     dayGroups = [];
 
     try {
-      const res = await fetch(`https://nyc-arrest-map-production.up.railway.app/api/arrests?month=${month}&year=${year}`);
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const arrests = await res.json();
+      const where = socrataWhere(month, year);
+
+      // Count query to know how many pages to fire concurrently
+      const countParams = new URLSearchParams({ '$select': 'count(*) as cnt', '$where': where });
+      const countRes = await fetch(`${SOCRATA_URL}?${countParams}`);
+      if (!countRes.ok) throw new Error(`Socrata count error ${countRes.status}`);
+      const total = parseInt((await countRes.json())[0].cnt, 10);
+
+      if (!total) {
+        statusEl.textContent = 'No records found for that period.';
+        setLoading(false);
+        return;
+      }
+
+      const numPages = Math.ceil(total / PAGE_LIMIT);
+      const offsets  = Array.from({ length: numPages }, (_, i) => i * PAGE_LIMIT);
+      const pages    = await Promise.all(offsets.map(off => socrataFetchPage(where, off)));
+      const arrests  = processPages(pages);
 
       if (!arrests.length) {
-        statusEl.textContent = 'No records found for that period.';
+        statusEl.textContent = 'No records with location data found.';
         setLoading(false);
         return;
       }
@@ -434,9 +486,8 @@
       dayGroups  = Object.keys(byDay).sort().map(d => ({ date: d, arrests: byDay[d] }));
       allArrests = arrests;
 
-      const total = arrests.length;
       statusEl.textContent =
-        `${total.toLocaleString()} arrests across ${dayGroups.length} days — press Play.`;
+        `${arrests.length.toLocaleString()} arrests across ${dayGroups.length} days — press Play.`;
       btnPlay.disabled  = false;
       btnReset.disabled = false;
       btnHeat.disabled  = false;
