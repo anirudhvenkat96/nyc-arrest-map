@@ -376,9 +376,9 @@
   // ── Helpers ────────────────────────────────────────────────────────────────
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  function colorFor(code) {
-    if (code === 'F') return '#f4c542';
-    if (code === 'M') return '#5bc8f5';
+  function colorFor(type) {
+    if (type === 1) return '#f4c542';
+    if (type === 2) return '#5bc8f5';
     return '#e07bb0';
   }
 
@@ -418,10 +418,10 @@
         return;
       }
 
-      // Group by day (arrest_date is ISO string, slice to YYYY-MM-DD)
+      // Group by day using the "YYYY-MM-DD" date at index 3
       const byDay = Object.create(null);
       for (const a of arrests) {
-        const day = a.arrest_date.slice(0, 10);
+        const day = a[3];
         (byDay[day] ??= []).push(a);
       }
       dayGroups  = Object.keys(byDay).sort().map(d => ({ date: d, arrests: byDay[d] }));
@@ -493,8 +493,8 @@
     const { date, arrests } = dayGroups[dayIdx];
 
     for (const a of arrests) {
-      const c = colorFor(a.law_cat_cd);
-      L.circleMarker([a.latitude, a.longitude], {
+      const c = colorFor(a[2]);
+      L.circleMarker([a[0], a[1]], {
         radius: 4 / 3,
         color: 'transparent',
         fillColor: c,
@@ -526,7 +526,7 @@
     if (playing) pause();
     map.removeLayer(markerLayer);
 
-    const points = allArrests.map(a => [a.latitude, a.longitude, 1]);
+    const points = allArrests.map(a => [a[0], a[1], 1]);
     heatLayer = L.heatLayer(points, {
       radius: 11,
       blur: 15,

@@ -52,6 +52,7 @@ async def get_arrests(month: int = Query(...), year: int = Query(...)):
                     round(float(lat), 4),
                     round(float(lon), 4),
                     CAT.get(record.get("law_cat_cd"), 3),
+                    (record.get("arrest_date") or "")[:10],
                 ])
 
     return results
