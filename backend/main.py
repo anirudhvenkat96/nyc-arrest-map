@@ -15,46 +15,46 @@ app.add_middleware(
 NYC_ARRESTS_URL = "https://data.cityofnewyork.us/resource/8h9b-rp9u.json"
 PAGE_SIZE = 5000
 MAX_PAGES = 6          # 30,000 records max per month
-PAGE_TIMEOUT = 30.0    # seconds per page request
+PAGE_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0)
 _YEAR_SEMAPHORE = asyncio.Semaphore(4)  # max concurrent month fetches
+
+
+async def _fetch_page(
+    client: httpx.AsyncClient, month: int, year: int, offset: int
+) -> list[dict]:
+    params = {
+        "$limit": PAGE_SIZE,
+        "$offset": offset,
+        "$where": f"date_extract_m(arrest_date)={month} AND date_extract_y(arrest_date)={year}",
+    }
+    response = await client.get(NYC_ARRESTS_URL, params=params)
+    response.raise_for_status()
+    return response.json()
 
 
 @app.get("/api/arrests")
 async def get_arrests(month: int = Query(...), year: int = Query(...)):
-    results = []
-    offset = 0
+    offsets = [i * PAGE_SIZE for i in range(MAX_PAGES)]
 
     async with httpx.AsyncClient(timeout=PAGE_TIMEOUT) as client:
-        while offset // PAGE_SIZE < MAX_PAGES:
-            params = {
-                "$limit": PAGE_SIZE,
-                "$offset": offset,
-                "$where": f"date_extract_m(arrest_date)={month} AND date_extract_y(arrest_date)={year}",
-            }
-            response = await client.get(NYC_ARRESTS_URL, params=params)
-            response.raise_for_status()
-            page = response.json()
+        pages = await asyncio.gather(
+            *[_fetch_page(client, month, year, offset) for offset in offsets]
+        )
 
-            if not page:
-                break
-
-            for record in page:
-                lat = record.get("latitude")
-                lon = record.get("longitude")
-                if lat and lon:
-                    results.append(
-                        {
-                            "arrest_date": record.get("arrest_date"),
-                            "latitude": float(lat),
-                            "longitude": float(lon),
-                            "law_cat_cd": record.get("law_cat_cd"),
-                        }
-                    )
-
-            if len(page) < PAGE_SIZE:
-                break
-
-            offset += PAGE_SIZE
+    results = []
+    for page in pages:
+        for record in page:
+            lat = record.get("latitude")
+            lon = record.get("longitude")
+            if lat and lon:
+                results.append(
+                    {
+                        "arrest_date": record.get("arrest_date"),
+                        "latitude": float(lat),
+                        "longitude": float(lon),
+                        "law_cat_cd": record.get("law_cat_cd"),
+                    }
+                )
 
     return results
 
